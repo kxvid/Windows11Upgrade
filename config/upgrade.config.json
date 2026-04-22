@@ -4,6 +4,7 @@
         "LTSC": "ISOs\\Win11_Enterprise_LTSC.iso"
     },
     "TargetBuild": "26100",
+    "TargetDisplayVersion": "24H2",
     "CopyIsoLocally": true,
     "LocalStagingPath": "C:\\ProgramData\\Win11Upgrade\\stage",
     "LogRoot": "C:\\ProgramData\\Win11Upgrade\\logs",
@@ -37,5 +38,9 @@
             "ComponentStore",
             "UpgradeArtifacts"
         ]
+    },
+    "Retry": {
+        "MaxAttemptsPerRun": 2,
+        "MaxAttemptsTotal": 5
     }
 }
