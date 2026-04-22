@@ -1,0 +1,4 @@
+ISOs/*.iso
+ISOs/*.ISO
+logs/
+*.log
