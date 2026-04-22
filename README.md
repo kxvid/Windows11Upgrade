@@ -13,7 +13,8 @@ Windows11Upgrade\
 ├── config\
 │   └── upgrade.config.json     <- paths, timings, setup flags
 ├── scripts\
-│   └── Invoke-Win11Upgrade.ps1 <- main script (invoked by the .bat)
+│   ├── Invoke-Win11Upgrade.ps1 <- main script (invoked by the .bat)
+│   └── Invoke-DiskCleanup.ps1  <- tiered auto-cleanup, called on low disk
 ├── ISOs\
 │   ├── README.txt
 │   ├── Win11_Enterprise.iso       (you provide - gitignored)
@@ -90,8 +91,10 @@ user warning, then exits before mounting or starting Setup.
 2. Reads current edition + build. If already on the target build
    (`TargetBuild` in config, default `26100` = 24H2), exits clean.
 3. Picks the matching ISO (LTSC vs non-LTSC).
-4. Verifies free disk space (`MinFreeDiskGB`, default 25 GB) and AC power
-   (`RequireAC`).
+4. Verifies free disk space (`MinFreeDiskGB`, default 25 GB). If below, runs
+   `Invoke-DiskCleanup.ps1` in tiered order, stopping as soon as
+   `AutoCleanup.TargetFreeGB` is reached. Aborts only if cleanup still can't
+   reach `MinFreeDiskGB`. Verifies AC power (`RequireAC`).
 5. Optionally copies the ISO to `C:\ProgramData\Win11Upgrade\stage` for a
    more reliable install than running setup over SMB.
 6. Sends `msg * /TIME:<n> /W <message>` to every active session - pops a
@@ -120,9 +123,33 @@ user warning, then exits before mounting or starting Setup.
 | `UserWarning.WarningSeconds`| Countdown length in seconds.                                                 |
 | `UserWarning.Message`       | Message text. `{MINUTES}` is replaced at runtime.                            |
 | `SetupArgs`                 | Arguments passed to `setup.exe`. Edit with care.                             |
-| `MinFreeDiskGB`             | Abort if system drive has less than this.                                    |
+| `MinFreeDiskGB`             | Abort if system drive has less than this after any cleanup.                  |
 | `RequireAC`                 | Abort on laptops running on battery.                                         |
 | `SkipIfAlreadyBuild`        | Skip machines already at/past `TargetBuild`.                                 |
+| `AutoCleanup.Enabled`       | If true and free disk < `MinFreeDiskGB`, run tiered cleanup before aborting. |
+| `AutoCleanup.TargetFreeGB`  | Cleanup stops as soon as this many GB are free. Default 30.                  |
+| `AutoCleanup.Tiers`         | Ordered list of tiers to run (remove any you don't want - see below).        |
+
+## Auto-cleanup tiers
+
+Run by `scripts\Invoke-DiskCleanup.ps1` in order; stops as soon as
+`TargetFreeGB` is reached. Never touches Documents, Downloads, Desktop, or
+anything under user profiles except temp/crash-dump caches.
+
+| Tier                   | What it deletes                                                    | Typical gain |
+| ---------------------- | ------------------------------------------------------------------ | ------------ |
+| `Temp`                 | `%TEMP%`, `C:\Windows\Temp`, per-user AppData\Local\Temp (>1 day)  | 0.5-3 GB     |
+| `RecycleBin`           | All drives                                                          | varies       |
+| `DeliveryOptimization` | Win Update peer cache                                              | 0-5 GB       |
+| `WindowsUpdate`        | `C:\Windows\SoftwareDistribution\Download` (stops wuauserv/bits)   | 1-10 GB      |
+| `CrashDumps`           | MEMORY.DMP, Minidump, WER queues, per-user CrashDumps              | 0-20 GB      |
+| `ComponentStore`       | `DISM /StartComponentCleanup /ResetBase` (slow, 5-15 min)          | 1-5 GB       |
+| `UpgradeArtifacts`     | `C:\Windows.old`, `$WINDOWS.~BT`, `$WINDOWS.~WS`, `$GetCurrent`    | 10-30 GB     |
+
+Remove tiers from `AutoCleanup.Tiers` to disable them. Running
+`UpgradeArtifacts` deletes `C:\Windows.old`, which removes the ability to roll
+back to the *previous* Windows install - the new upgrade creates a fresh
+Windows.old, so this is safe before an upgrade but not between upgrades.
 
 ## Troubleshooting
 

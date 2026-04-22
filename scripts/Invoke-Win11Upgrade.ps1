@@ -114,12 +114,36 @@ if (-not (Test-Path -LiteralPath $isoPath)) {
     throw "ISO not found: $isoPath"
 }
 
-# ---------- Preflight: disk space ----------
+# ---------- Preflight: disk space (with optional auto-cleanup) ----------
 $systemDrive = ($env:SystemDrive).TrimEnd(':')
 $freeGB = [math]::Floor((Get-PSDrive -Name $systemDrive).Free / 1GB)
-Write-Log "Free space on ${systemDrive}: ${freeGB} GB (min $($Config.MinFreeDiskGB) GB)"
-if ($freeGB -lt [int]$Config.MinFreeDiskGB) {
-    throw "Insufficient free space on $systemDrive (have ${freeGB} GB, need $($Config.MinFreeDiskGB) GB)"
+$minGB  = [int]$Config.MinFreeDiskGB
+Write-Log "Free space on ${systemDrive}: ${freeGB} GB (min ${minGB} GB)"
+
+if ($freeGB -lt $minGB) {
+    $cleanupCfg = $Config.AutoCleanup
+    if ($cleanupCfg -and $cleanupCfg.Enabled) {
+        $target = if ($cleanupCfg.TargetFreeGB) { [int]$cleanupCfg.TargetFreeGB } else { $minGB + 5 }
+        Write-Log "Below threshold - running auto-cleanup (target ${target} GB)..."
+        $cleanupScript = Join-Path $PSScriptRoot 'Invoke-DiskCleanup.ps1'
+        if (-not (Test-Path -LiteralPath $cleanupScript)) {
+            throw "Auto-cleanup enabled but script missing: $cleanupScript"
+        }
+        $tiers = if ($cleanupCfg.Tiers) { @($cleanupCfg.Tiers) } else { @('Temp','RecycleBin','DeliveryOptimization','WindowsUpdate','CrashDumps','ComponentStore','UpgradeArtifacts') }
+        $logFileRef = $LogFile
+        $logCallback = {
+            param($m, $l = 'INFO')
+            $line = '{0} [{1}] {2}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $l, $m
+            Add-Content -LiteralPath $logFileRef -Value $line -ErrorAction SilentlyContinue
+            Write-Host $line
+        }.GetNewClosure()
+        $result = & $cleanupScript -TargetFreeGB $target -Tiers $tiers -LogCallback $logCallback
+        $freeGB = [math]::Floor((Get-PSDrive -Name $systemDrive).Free / 1GB)
+        Write-Log ("Post-cleanup free space: ${freeGB} GB (freed {0} GB, tiers run: {1})" -f $result.FreedGB, ($result.TiersRun -join ',')) 'OK'
+    }
+    if ($freeGB -lt $minGB) {
+        throw "Insufficient free space on $systemDrive (have ${freeGB} GB, need ${minGB} GB). Cleanup did not free enough - manual intervention required."
+    }
 }
 
 # ---------- Preflight: AC power ----------

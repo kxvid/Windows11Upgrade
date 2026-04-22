@@ -24,5 +24,18 @@
     ],
     "MinFreeDiskGB": 25,
     "RequireAC": true,
-    "SkipIfAlreadyBuild": true
+    "SkipIfAlreadyBuild": true,
+    "AutoCleanup": {
+        "Enabled": true,
+        "TargetFreeGB": 30,
+        "Tiers": [
+            "Temp",
+            "RecycleBin",
+            "DeliveryOptimization",
+            "WindowsUpdate",
+            "CrashDumps",
+            "ComponentStore",
+            "UpgradeArtifacts"
+        ]
+    }
 }
